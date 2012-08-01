@@ -31,7 +31,7 @@ from struct import pack, unpack
 try:
     from ssl import wrap_socket
 except ImportError:
-    from socket import ssl
+    from socket import ssl as wrap_socket
 
 try:
     import json
@@ -123,10 +123,7 @@ class APNsConnection(object):
         # Establish an SSL connection
         self._socket = socket(AF_INET, SOCK_STREAM)
         self._socket.connect((self.server, self.port))
-        if wrap_socket:
-            self._ssl = wrap_socket(self._socket, self.key_file, self.cert_file)
-        else:
-            self._ssl = ssl(self._socket, self.key_file, self.cert_file)
+        self._ssl = wrap_socket(self._socket, self.key_file, self.cert_file)
 
     def _disconnect(self):
         if self._socket:
@@ -167,8 +164,16 @@ class PayloadAlert(object):
         return d
 
 class PayloadTooLargeError(Exception):
-    def __init__(self):
+    def __init__(self, size):
         super(PayloadTooLargeError, self).__init__()
+        self._size = size
+    
+    @property
+    def size(self):
+        return self._size
+    
+    def __len__(self):
+        return self.size
 
 class Payload(object):
     """A class representing an APNs message payload"""
@@ -203,8 +208,9 @@ class Payload(object):
         return json.dumps(self.dict(), separators=(',',':'), ensure_ascii=False).encode('utf-8')
 
     def _check_size(self):
-        if len(self.json()) > MAX_PAYLOAD_LENGTH:
-            raise PayloadTooLargeError()
+        size = len(self.json())
+        if size > MAX_PAYLOAD_LENGTH:
+            raise PayloadTooLargeError(size)
 
     def __repr__(self):
         attrs = ("alert", "badge", "sound", "custom")
