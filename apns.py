@@ -44,8 +44,10 @@ MAX_PAYLOAD_LENGTH = 256
 CHECK_CLOSED_SOCKET = bool(os.getenv('APNS_CHECK_CLOSED_SOCKET', False))
 CHECK_CLOSED_SOCKET_TIMEOUT = float(os.getenv('APNS_CHECK_CLOSED_SOCKET_TIMEOUT', 0.5))
 
-import logging
-log = logging.getLogger(__name__)
+
+class APNSClosedSocketException(error):
+    def __init__(self, *args, **kwargs):
+        error.__init__(self, *args, **kwargs)
 
 class APNs(object):
     """A class representing an Apple Push Notification service connection"""
@@ -166,8 +168,8 @@ class APNsConnection(object):
         if CHECK_CLOSED_SOCKET:
             ret = self.read(1, CHECK_CLOSED_SOCKET_TIMEOUT)
             if ret != -1:
-                log.error('APNS unexpected close of socket. Disconnecting to do a new connection')
                 self._disconnect()
+                raise APNSClosedSocketException('Detected socket has been closed with a read timeout %s' %(CHECK_CLOSED_SOCKET_TIMEOUT))
         try:
             ret =  self._connection().write(string)
             return ret
