@@ -27,6 +27,7 @@ from binascii import a2b_hex, b2a_hex
 from datetime import datetime
 from socket import socket, AF_INET, SOCK_STREAM, error
 from struct import pack, unpack
+import os
 
 try:
     from ssl import wrap_socket
@@ -39,6 +40,14 @@ except ImportError:
     import simplejson as json
 
 MAX_PAYLOAD_LENGTH = 256
+
+CHECK_CLOSED_SOCKET = bool(os.getenv('APNS_CHECK_CLOSED_SOCKET', False))
+CHECK_CLOSED_SOCKET_TIMEOUT = float(os.getenv('APNS_CHECK_CLOSED_SOCKET_TIMEOUT', 0.5))
+
+
+class APNSClosedSocketException(error):
+    def __init__(self, *args, **kwargs):
+        error.__init__(self, *args, **kwargs)
 
 class APNs(object):
     """A class representing an Apple Push Notification service connection"""
@@ -140,17 +149,31 @@ class APNsConnection(object):
             self._connect()
         return self._ssl
 
-    def read(self, n=None):
+    def read(self, n=None, timeout=None):
         try:
-            return self._connection().read(n)
-        except:
-            self._disconnect()
-            raise
-
+            if timeout != None:
+                self._connection().settimeout(timeout)
+            ret = self._connection().read(n)
+            return ret
+        except error as e:
+            if timeout == None:
+                self._disconnect()
+                raise
+            self._connection().settimeout(None)
+            if str(e) == 'The read operation timed out':
+                return -1
+            return 0
+    
     def write(self, string):
+        if CHECK_CLOSED_SOCKET:
+            ret = self.read(1, CHECK_CLOSED_SOCKET_TIMEOUT)
+            if ret != -1:
+                self._disconnect()
+                raise APNSClosedSocketException('Detected socket has been closed with a read timeout %s' %(CHECK_CLOSED_SOCKET_TIMEOUT))
         try:
-            return self._connection().write(string)
-        except:
+            ret =  self._connection().write(string)
+            return ret
+        except error:
             self._disconnect()
             raise
 
